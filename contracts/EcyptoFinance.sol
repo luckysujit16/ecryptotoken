@@ -111,7 +111,7 @@ contract EcyptoFinance {
             withdrawalInUSDT: 0,
             isActive: true,
             createdOn: block.timestamp,
-            referrals: new address(0)
+            referrals: new address[](0)
         });
         userAddresses.push(owner);
     }
@@ -139,7 +139,7 @@ contract EcyptoFinance {
                 withdrawalInUSDT: 0,
                 isActive: true,
                 createdOn: block.timestamp,
-                referrals: users[address(0)].referrals.push(owner)
+                referrals: new address[](0)
             });
 
             userAddresses.push(msg.sender);
