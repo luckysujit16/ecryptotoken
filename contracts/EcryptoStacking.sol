@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol"; // Add this
 
-contract StakingContract is Ownable(address(msg.sender)), UUPSUpgradeable, Initializable {
+contract EcryptoStacking is Ownable(address(msg.sender)), UUPSUpgradeable, Initializable {
     IERC20 public token;
 
     struct Stake {
