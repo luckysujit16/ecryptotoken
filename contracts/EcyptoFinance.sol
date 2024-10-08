@@ -34,6 +34,23 @@ contract EcyptoFinance {
     uint256 public directReferralPer = 5; // One Time
     uint256 public referralLevelPer = 1; // monthly
 
+    uint256 public initialTokenRate = 5;
+
+    uint256 public minimumDeposit = 5; // In USDT
+    uint256 public minimumWithdrawal = 5; // In USDT
+    uint256 public precision = 1e18; // In Wie
+
+    uint256 public withdrawalFees = 5;
+
+    uint256 public liquiditySharePercent = 50;
+    uint256 public marketingSharePercent = 10;
+    uint256 public promoSharePercent = 5;
+    uint256 public adminSharePercent = 5;
+    uint256 public emergencySharePercent = 10;
+    uint256 public contractSharePercent = 20;
+
+    uint256 public maxLevels = 10;
+
     struct User {
         address user;
         address referrer;
@@ -98,7 +115,7 @@ contract EcyptoFinance {
         tokenAddress = _tokenAddress;
         stakingAddress = _stakingAddress;
         feesAddress = _feesAddress;
-    
+
         // Initialize the owner as the first user
         users[owner] = User({
             user: owner,
@@ -117,7 +134,10 @@ contract EcyptoFinance {
     }
 
     function invest(uint256 amount, address referrer) external {
-        require(amount > 5 * (10 ** 18), "Deposit must be greater than 5 USDT");
+        require(
+            amount > minimumDeposit * precision,
+            "Deposit must be greater than 5 USDT"
+        );
 
         // Register the user if not already registered
         if (users[msg.sender].user == address(0)) {
@@ -143,9 +163,8 @@ contract EcyptoFinance {
             });
 
             userAddresses.push(msg.sender);
-            
+
             users[referrer].referrals.push(msg.sender);
-            
         }
 
         // Add deposit details with timestamp
@@ -154,13 +173,14 @@ contract EcyptoFinance {
         );
 
         // Pre-calculate the amount percentages to save gas
-        uint256 liquidityShare = (amount * 50) / 100;
-        uint256 marketingShare = (amount * 10) / 100;
-        uint256 promoShare = (amount * 5) / 100;
-        uint256 adminShare = (amount * 5) / 100;
-        uint256 emergencyShare = (amount * 10) / 100;
-        uint256 tokenLiquidityShare = (amount / calculateLiveRate()) * 10 ** 18;
-        uint256 contractShare = (amount * 20) / 100;
+        uint256 liquidityShare = (amount * liquiditySharePercent) / 100;
+        uint256 marketingShare = (amount * marketingSharePercent) / 100;
+        uint256 promoShare = (amount * promoSharePercent) / 100;
+        uint256 adminShare = (amount * adminSharePercent) / 100;
+        uint256 emergencyShare = (amount * emergencySharePercent) / 100;
+        uint256 tokenLiquidityShare = (amount / calculateLiveRate()) *
+            precision;
+        uint256 contractShare = (amount * contractSharePercent) / 100;
 
         // Transfer USDT to respective addresses
         transferUsd(liquidityAddress, liquidityShare);
@@ -198,15 +218,17 @@ contract EcyptoFinance {
         address currentUser,
         uint256 level
     ) internal view returns (uint256) {
-        if (currentUser == address(0) || level > 10) {
-            return 0; // Stop recursion if user is invalid or level exceeds 10
+        if (currentUser == address(0) || level > maxLevels) {
+            return 0;
         }
 
         uint256 totalIncome = 0;
 
-        // Calculate daily percentage with precision scaling
-        uint256 daysInMonth = getDaysInMonth(block.timestamp);
-        uint256 dailyPercentage = (1 * 1e18) / daysInMonth; // Scale by 1e18 for precision
+        uint256 numerator = referralLevelPer * 12 * 1e18;
+        uint256 denominator = 365;
+
+        // Perform the division
+        uint256 dailyPercentage = numerator / denominator;
 
         // Get the user's deposits and calculate total business volume
         Deposit[] memory userDeposits = deposits[currentUser];
@@ -222,8 +244,6 @@ contract EcyptoFinance {
         // Only calculate income if the user qualifies for this business level
         if (businessLevel >= level) {
             // Get referral percentage once per user
-           
-            
 
             for (uint256 i = 0; i < userDeposits.length; i++) {
                 Deposit memory currentDeposit = userDeposits[i];
@@ -234,7 +254,6 @@ contract EcyptoFinance {
                 // Calculate income for the current deposit with scaling
                 uint256 dailyIncome = (currentDeposit.amount *
                     dailyPercentage) / 1e18; // Divide by 1e18 to match precision
-                
 
                 // Add to total income based on the days passed
                 totalIncome += dailyIncome * daysPassed;
@@ -307,42 +326,11 @@ contract EcyptoFinance {
         // Get the growth percentage based on the invested amount
         uint256 growthPer = getGrowthPer(investments[user]);
 
-        // Calculate the number of days in the current month
-        uint256 daysInMonth = getDaysInMonth(block.timestamp);
-
         // Calculate per day percent and income
-        uint256 perDayPercent = (growthPer * 1e18) / daysInMonth; // Scaled up to avoid precision loss
+        uint256 perDayPercent = (growthPer * precision * 12) / 365; // Scaled up to avoid precision loss
         uint256 perDayIncome = (investments[user] * perDayPercent) / 100e18; // Scale back down
 
         return perDayIncome * daysPassed;
-    }
-
-    function getDaysInMonth(uint256 timestamp) internal pure returns (uint256) {
-        uint256 year = getYear(timestamp);
-        uint256 month = getMonth(timestamp);
-
-        // Days per month in a non-leap year
-        uint256[12] memory daysInMonth = [
-            31,
-            28,
-            31,
-            30,
-            31,
-            30,
-            31,
-            31,
-            30,
-            31,
-            30,
-            31
-        ];
-
-        // Check for leap year in February
-        if (isLeapYear(year) && month == 2) {
-            return 29;
-        }
-
-        return daysInMonth[month - 1];
     }
 
     function calculateDaysSince(
@@ -353,47 +341,6 @@ contract EcyptoFinance {
         } else {
             return 0;
         }
-    }
-
-    function isLeapYear(uint256 year) internal pure returns (bool) {
-        return ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
-    }
-
-    function getYear(uint256 timestamp) internal pure returns (uint256) {
-        return (timestamp / 365 days) + 1970;
-    }
-
-    function getMonth(uint256 timestamp) internal pure returns (uint256) {
-        uint256 daysSince1970 = timestamp / 1 days;
-        uint256 year = (daysSince1970 / 365) + 1970;
-        uint256 leapYears = (year - 1970) /
-            4 -
-            (year - 1970) /
-            100 +
-            (year - 1970) /
-            400;
-        uint256 daysInCurrentYear = daysSince1970 -
-            ((year - 1970) * 365 + leapYears);
-        uint256[12] memory cumulativeDaysInMonths = [
-            31,
-            59,
-            90,
-            120,
-            151,
-            181,
-            212,
-            243,
-            273,
-            304,
-            334,
-            365
-        ];
-        for (uint256 i = 0; i < 12; i++) {
-            if (daysInCurrentYear < cumulativeDaysInMonths[i]) {
-                return i + 1;
-            }
-        }
-        return 12;
     }
 
     function getGrowthPer(
@@ -408,7 +355,7 @@ contract EcyptoFinance {
         } else if (investedAmount >= 5) {
             return 4;
         } else {
-            return 0; // Below the minimum investment threshold
+            return 0;
         }
     }
 
@@ -459,7 +406,7 @@ contract EcyptoFinance {
         uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
             liquidityAddress
         );
-        uint256 baseRate = 5 * (10 ** 18);
+        uint256 baseRate = initialTokenRate * (10 ** 18);
 
         // Calculate total supply held by users
         uint256 totalSupply = ecryptoToken.totalSupply();
@@ -478,7 +425,7 @@ contract EcyptoFinance {
             getStakingBalance();
 
         // Calculate rate with a scaling factor for precision
-        uint256 rate = (totalUSDT * (10 ** 18)) / totalSupplyOfUser;
+        uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
 
         // Return the greater of rate or baseRate
         return rate >= baseRate ? rate : baseRate;
@@ -511,10 +458,9 @@ contract EcyptoFinance {
 
     function withdraw(uint256 amount, uint256 withType, address user) external {
         require(withType == 1 || withType == 2, "Invalid withdrawal type");
-        require(amount >= 10, "Minimum withdrawal amount is 5");
+        require(amount >= minimumWithdrawal, "Minimum withdrawal amount is 5");
 
-        uint256 fees = 3; // Fee percentage
-        uint256 precision = 1e18; // Precision constant
+        uint256 fees = withdrawalFees; // Fee percentage
 
         // Calculate available balances
         uint256 growthUsd = calculateGrowth(user);
@@ -543,8 +489,8 @@ contract EcyptoFinance {
         if (withType == 1) {
             // USDT withdrawal
             uint256 feesInTokens = (feeUsd * precision) / calculateLiveRate(); // Convert fee to tokens based on live rate
-            if (feesInTokens < 1e18) {
-                feesInTokens = 1e18; // Ensure a minimum fee in tokens
+            if (feesInTokens < precision) {
+                feesInTokens = precision; // Ensure a minimum fee in tokens
             }
 
             // Transfer net amount and fee
@@ -558,8 +504,8 @@ contract EcyptoFinance {
             uint256 tokenAmount = (amount * precision) / calculateLiveRate(); // Convert withdrawal amount to tokens
             uint256 feesInTokens = (tokenAmount * fees) / 100; // Calculate fee in tokens
 
-            if (feesInTokens < 1e18) {
-                feesInTokens = 1e18; // Ensure a minimum fee in tokens
+            if (feesInTokens < precision) {
+                feesInTokens = precision; // Ensure a minimum fee in tokens
             }
 
             // Transfer net amount and fee
@@ -581,5 +527,41 @@ contract EcyptoFinance {
                 withType: withType
             })
         );
+    }
+
+    function updateRate(uint256 rate) external onlyOwner {
+        initialTokenRate = rate; // Correctly assigns to state variable
+    }
+
+    function updateReferralLevelPer(uint256 refeLevelPer) external onlyOwner {
+        referralLevelPer = refeLevelPer; // Correctly assigns to state variable
+    }
+
+    function updateDirectReferralPer(uint256 directPer) external onlyOwner {
+        directReferralPer = directPer; // Correctly assigns to state variable
+    }
+
+    function updateMinimumDeposit(
+        uint256 minimumDepositValue
+    ) external onlyOwner {
+        minimumDeposit = minimumDepositValue; // Correctly assigns to state variable
+    }
+
+    function updateMinimumWithdrawal(
+        uint256 minimumWithdrawalValue
+    ) external onlyOwner {
+        minimumWithdrawal = minimumWithdrawalValue; // Correctly assigns to state variable
+    }
+
+    function updateWithdrawalFees(
+        uint256 withdrawalFeesValue
+    ) external onlyOwner {
+        withdrawalFees = withdrawalFeesValue; // Correctly assigns to state variable
+    }
+
+    function updateLiquidityAddress(
+        address liquidityAddrs
+    ) external onlyOwner {
+        liquidityAddress = liquidityAddrs; // Correctly assigns to state variable
     }
 }
