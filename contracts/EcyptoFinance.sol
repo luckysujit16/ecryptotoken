@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -17,17 +17,17 @@ contract EcyptoFinance {
 
     IERC20 public usdtToken;
     IEcryptoToken public ecryptoToken;
-    address public owner;
+    address private owner;
 
     // Addresses for various payments
-    address public liquidityAddress;
-    address public marketingAddress;
-    address public promoAddress;
-    address public adminAddress;
-    address public emergencyAddress;
-    address public liquidityPoolAddress;
-    address public stakingAddress;
-    address public feesAddress;
+    address private liquidityAddress;
+    address private marketingAddress;
+    address private promoAddress;
+    address private adminAddress;
+    address private emergencyAddress;
+    address private liquidityPoolAddress;
+    address private stakingAddress;
+    address private feesAddress;
 
     address public tokenAddress;
 
@@ -76,9 +76,9 @@ contract EcyptoFinance {
     }
 
     mapping(address => User) public users;
-    mapping(address => Deposit[]) public deposits;
-    mapping(address => Withdrawal[]) public withdrawals;
-    address[] public userAddresses;
+    mapping(address => Deposit[]) private deposits;
+    mapping(address => Withdrawal[]) private withdrawals;
+    address[] private userAddresses;
     mapping(address => uint256) public investments;
 
     event Invested(address indexed user, uint256 amount);
@@ -239,7 +239,7 @@ contract EcyptoFinance {
         }
 
         // Determine the business level based on total business volume
-        uint256 businessLevel = getBusinessLevel(totalBusinessVolume);
+        uint256 businessLevel = getBusinessLevel();
 
         // Only calculate income if the user qualifies for this business level
         if (businessLevel >= level) {
@@ -274,41 +274,10 @@ contract EcyptoFinance {
 
     // Function to determine the business level based on the total business volume
     function getBusinessLevel(
-        uint256 businessVolume
+        
     ) public pure returns (uint256 level) {
-        if (businessVolume >= 2 * 10 ** 9) {
-            // 2 Billion
-            return 10;
-        } else if (businessVolume >= 375 * 10 ** 6) {
-            // 375 Million
-            return 9;
-        } else if (businessVolume >= 75 * 10 ** 6) {
-            // 75 Million
-            return 8;
-        } else if (businessVolume >= 15 * 10 ** 6) {
-            // 15 Million
-            return 7;
-        } else if (businessVolume >= 3 * 10 ** 6) {
-            // 3 Million
-            return 6;
-        } else if (businessVolume >= 600000) {
-            // 0.6 Million
-            return 5;
-        } else if (businessVolume >= 125000) {
-            // 125K
-            return 4;
-        } else if (businessVolume >= 25000) {
-            // 25K
-            return 3;
-        } else if (businessVolume >= 5000) {
-            // 5K
-            return 2;
-        } else if (businessVolume >= 1000) {
-            // 1K
-            return 1;
-        } else {
-            return 0; // No qualification
-        }
+         return 10;
+        
     }
 
     function calculateGrowth(address user) public view returns (uint256) {
@@ -337,7 +306,7 @@ contract EcyptoFinance {
         uint256 timestamp
     ) internal view returns (uint256) {
         if (block.timestamp > timestamp) {
-            return (block.timestamp - timestamp) / 1 days;
+            return (block.timestamp - timestamp) / 1 minutes;
         } else {
             return 0;
         }
@@ -396,131 +365,119 @@ contract EcyptoFinance {
         return userAddresses;
     }
 
-    function getStakingBalance() public view returns (uint256) {
-        uint256 ecryptoTokenStakingBal = ecryptoToken.balanceOf(stakingAddress);
-        return ecryptoTokenStakingBal * calculateLiveRate();
+    function getStakingBalance(uint256 rate) public view returns (uint256) {
+    uint256 ecryptoTokenStakingBal = ecryptoToken.balanceOf(stakingAddress);
+    return ecryptoTokenStakingBal * rate;
+}
+
+function calculateLiveRate() public view returns (uint256) {
+    uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
+    uint256 liquidityTokenBalance = ecryptoToken.balanceOf(liquidityAddress);
+    uint256 baseRate = initialTokenRate * (10 ** 18);
+
+    // Calculate total supply held by users
+    uint256 totalSupply = ecryptoToken.totalSupply();
+    uint256 totalSupplyOfUser = totalSupply -
+        (ecryptoTokenBal + liquidityTokenBalance);
+
+    // If no tokens are held by users, return the base rate
+    if (totalSupplyOfUser == 0) {
+        return baseRate;
     }
 
-    function calculateLiveRate() public view returns (uint256) {
-        uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
-        uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
-            liquidityAddress
-        );
-        uint256 baseRate = initialTokenRate * (10 ** 18);
+    // Calculate total USDT held across liquidity, emergency, and contract balances
+    uint256 totalUSDT = usdtToken.balanceOf(liquidityPoolAddress) +
+        usdtToken.balanceOf(emergencyAddress) +
+        usdtToken.balanceOf(address(this));
 
-        // Calculate total supply held by users
-        uint256 totalSupply = ecryptoToken.totalSupply();
-        uint256 totalSupplyOfUser = totalSupply -
-            (ecryptoTokenBal + liquidityTokenBalance);
+    // Add the staking balance separately without recursion
+    uint256 stakingBalance = ecryptoToken.balanceOf(stakingAddress);
+    totalUSDT += stakingBalance * baseRate; // Use base rate or a pre-calculated rate if needed
 
-        // If no tokens are held by users, return the base rate
-        if (totalSupplyOfUser == 0) {
-            return baseRate;
-        }
+    // Calculate rate with a scaling factor for precision
+    uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
 
-        // Calculate total USDT held across liquidity, emergency, and contract balances
-        uint256 totalUSDT = usdtToken.balanceOf(liquidityPoolAddress) +
-            usdtToken.balanceOf(emergencyAddress) +
-            usdtToken.balanceOf(address(this)) +
-            getStakingBalance();
-
-        // Calculate rate with a scaling factor for precision
-        uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
-
-        // Return the greater of rate or baseRate
-        return rate >= baseRate ? rate : baseRate;
+    // Return the greater of rate or baseRate
+    return rate >= baseRate ? rate : baseRate;
     }
 
-    function calculatetotalSupplyOfUser() public view returns (uint256) {
-        uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
-        // uint256 ownerTokenBalance = ecryptoToken.balanceOf(owner);
-        uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
-            liquidityAddress
-        );
-        // Calculate total supply held by users
-        uint256 totalSupply = ecryptoToken.totalSupply();
-        uint256 totalSupplyOfUser = totalSupply -
-            (ecryptoTokenBal + liquidityTokenBalance);
+   
 
-        return totalSupplyOfUser;
-    }
-
-    function calUsd() public view returns (uint256) {
-        uint256 liquidityUSDTBal = usdtToken.balanceOf(liquidityPoolAddress);
-        uint256 emergencyUSDTBal = usdtToken.balanceOf(emergencyAddress);
-        uint256 contractUSDTBal = usdtToken.balanceOf(address(this));
-        // Total USDT held in the contract
-        uint256 totalUSDT = liquidityUSDTBal +
-            emergencyUSDTBal +
-            contractUSDTBal;
-        return totalUSDT;
-    }
-
-    function withdraw(uint256 amount, uint256 withType, address user) external {
+   function withdraw(uint256 amount, uint256 withType) external {
         require(withType == 1 || withType == 2, "Invalid withdrawal type");
         require(amount >= minimumWithdrawal, "Minimum withdrawal amount is 5");
-
+ 
+        // Check if the user (msg.sender) is registered (i.e., they have made an investment)
+        require(investments[msg.sender] > 0, "User is not registered");
+ 
         uint256 fees = withdrawalFees; // Fee percentage
-
+ 
         // Calculate available balances
-        uint256 growthUsd = calculateGrowth(user);
-        uint256 referralUsd = calculateReferralIncomeForTree(user);
-        uint256 directReferralUsd = users[user].directBal;
-        uint256 storedReferralUsd = users[user].referralBal;
-
+        uint256 growthUsd = calculateGrowth(msg.sender);
+        uint256 referralUsd = calculateReferralIncomeForTree(msg.sender);
+        uint256 directReferralUsd = users[msg.sender].directBal;
+        uint256 storedReferralUsd = users[msg.sender].referralBal;
+ 
         // Total available balance for withdrawal
         uint256 totalUsd = growthUsd +
             referralUsd +
             directReferralUsd +
             storedReferralUsd -
-            users[user].totalWithdrawal;
-
+            users[msg.sender].totalWithdrawal;
+ 
         require(totalUsd >= amount, "Insufficient withdrawal amount");
-
+ 
         // Ensure total withdrawals don't exceed 3x the user's investment
         require(
-            users[user].totalWithdrawal + amount <= investments[user] * 3,
+            users[msg.sender].totalWithdrawal + amount <=
+                investments[msg.sender] * 3,
             "Withdrawal amount exceeds 3x of your investment"
         );
-
+ 
         uint256 feeUsd = (amount * fees) / 100; // Calculate fee amount in USD
         uint256 netAmount = amount - feeUsd; // Amount after fee deduction
-
+ 
         if (withType == 1) {
             // USDT withdrawal
             uint256 feesInTokens = (feeUsd * precision) / calculateLiveRate(); // Convert fee to tokens based on live rate
-            if (feesInTokens < precision) {
-                feesInTokens = precision; // Ensure a minimum fee in tokens
+ 
+            if (feeUsd < precision) {
+                // Ensure a minimum fee in tokens
+                feesInTokens = (1 * precision) / calculateLiveRate();
             }
-
+ 
             // Transfer net amount and fee
-            usdtToken.safeTransfer(user, netAmount);
+            usdtToken.safeTransfer(
+                msg.sender,
+                (netAmount * precision) / calculateLiveRate()
+            ); // Convert net amount to tokens
             mintToken(feesAddress, feesInTokens);
-
-            emit Withdra(user, amount, withType);
+ 
+            emit Withdra(msg.sender, amount, withType);
             emit Mined(feesAddress, feesInTokens);
         } else if (withType == 2) {
             // Token withdrawal
             uint256 tokenAmount = (amount * precision) / calculateLiveRate(); // Convert withdrawal amount to tokens
             uint256 feesInTokens = (tokenAmount * fees) / 100; // Calculate fee in tokens
-
-            if (feesInTokens < precision) {
-                feesInTokens = precision; // Ensure a minimum fee in tokens
+ 
+            if (feeUsd < precision) {
+                // Ensure a minimum fee in tokens
+               feesInTokens = (1 * precision) / calculateLiveRate();
             }
-
+ 
             // Transfer net amount and fee
-            mintToken(user, tokenAmount - feesInTokens);
+            mintToken(msg.sender, tokenAmount - feesInTokens);
             mintToken(feesAddress, feesInTokens);
-
-            emit Withdra(user, tokenAmount, withType);
+ 
+            emit Withdra(msg.sender, tokenAmount, withType);
             emit Mined(feesAddress, feesInTokens);
         }
-
+ 
         // Update user's total withdrawal
-        users[user].totalWithdrawal += amount;
-
+        users[msg.sender].totalWithdrawal += amount;
+ 
         // Log the withdrawal
-        withdrawals[user].push(
+        withdrawals[msg.sender].push(
             Withdrawal({
                 amount: amount,
                 timestamp: block.timestamp,
@@ -529,39 +486,4 @@ contract EcyptoFinance {
         );
     }
 
-    function updateRate(uint256 rate) external onlyOwner {
-        initialTokenRate = rate; // Correctly assigns to state variable
-    }
-
-    function updateReferralLevelPer(uint256 refeLevelPer) external onlyOwner {
-        referralLevelPer = refeLevelPer; // Correctly assigns to state variable
-    }
-
-    function updateDirectReferralPer(uint256 directPer) external onlyOwner {
-        directReferralPer = directPer; // Correctly assigns to state variable
-    }
-
-    function updateMinimumDeposit(
-        uint256 minimumDepositValue
-    ) external onlyOwner {
-        minimumDeposit = minimumDepositValue; // Correctly assigns to state variable
-    }
-
-    function updateMinimumWithdrawal(
-        uint256 minimumWithdrawalValue
-    ) external onlyOwner {
-        minimumWithdrawal = minimumWithdrawalValue; // Correctly assigns to state variable
-    }
-
-    function updateWithdrawalFees(
-        uint256 withdrawalFeesValue
-    ) external onlyOwner {
-        withdrawalFees = withdrawalFeesValue; // Correctly assigns to state variable
-    }
-
-    function updateLiquidityAddress(
-        address liquidityAddrs
-    ) external onlyOwner {
-        liquidityAddress = liquidityAddrs; // Correctly assigns to state variable
-    }
 }
