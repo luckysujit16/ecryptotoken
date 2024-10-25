@@ -75,6 +75,11 @@ contract EcyptoFinance {
         uint256 withType;
     }
 
+    struct UserReferralTree {
+        address user;
+        UserReferralTree[] directReferrals;
+    }
+
     mapping(address => User) public users;
     mapping(address => Deposit[]) private deposits;
     mapping(address => Withdrawal[]) private withdrawals;
@@ -272,12 +277,58 @@ contract EcyptoFinance {
         return totalIncome;
     }
 
+    function getReferralTree(
+        address currentUser
+    ) internal view returns (UserReferralTree memory) {
+        uint256 maxReferralDepth = 10; // Maximum depth is 10 levels
+        return _getReferralTreeRecursive(currentUser, 1, maxReferralDepth);
+    }
+
+    function _getReferralTreeRecursive(
+        address currentUser,
+        uint256 currentLevel,
+        uint256 maxLevel
+    ) internal view returns (UserReferralTree memory) {
+        if (currentUser == address(0) || currentLevel > maxLevel) {
+            return UserReferralTree(address(0), new UserReferralTree);
+        }
+
+        // Initialize the referral tree for the current user
+        UserReferralTree memory currentUserTree;
+        currentUserTree.user = currentUser;
+
+        // Get direct referrals of the current user
+        address[] memory directReferrals = users[currentUser].referrals;
+
+        // Create an array to hold the referral trees for direct referrals
+        UserReferralTree[] memory referralsTree = new UserReferralTree[](
+            directReferrals.length
+        );
+
+        // Recursively get the referral tree for each direct referral, up to the max level
+        for (uint256 i = 0; i < directReferrals.length; i++) {
+            referralsTree[i] = _getReferralTreeRecursive(
+                directReferrals[i],
+                currentLevel + 1,
+                maxLevel
+            );
+        }
+
+        // Set the direct referrals for the current user
+        currentUserTree.directReferrals = referralsTree;
+
+        return currentUserTree;
+    }
+
+    function getDirectReferrals(
+        address currentUser
+    ) internal view returns (address[] memory) {
+        return users[currentUser].referrals;
+    }
+
     // Function to determine the business level based on the total business volume
-    function getBusinessLevel(
-        
-    ) public pure returns (uint256 level) {
-         return 10;
-        
+    function getBusinessLevel() public pure returns (uint256 level) {
+        return 10;
     }
 
     function calculateGrowth(address user) public view returns (uint256) {
@@ -366,116 +417,116 @@ contract EcyptoFinance {
     }
 
     function getStakingBalance(uint256 rate) public view returns (uint256) {
-    uint256 ecryptoTokenStakingBal = ecryptoToken.balanceOf(stakingAddress);
-    return ecryptoTokenStakingBal * rate;
-}
-
-function calculateLiveRate() public view returns (uint256) {
-    uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
-    uint256 liquidityTokenBalance = ecryptoToken.balanceOf(liquidityAddress);
-    uint256 baseRate = initialTokenRate * (10 ** 18);
-
-    // Calculate total supply held by users
-    uint256 totalSupply = ecryptoToken.totalSupply();
-    uint256 totalSupplyOfUser = totalSupply -
-        (ecryptoTokenBal + liquidityTokenBalance);
-
-    // If no tokens are held by users, return the base rate
-    if (totalSupplyOfUser == 0) {
-        return baseRate;
+        uint256 ecryptoTokenStakingBal = ecryptoToken.balanceOf(stakingAddress);
+        return ecryptoTokenStakingBal * rate;
     }
 
-    // Calculate total USDT held across liquidity, emergency, and contract balances
-    uint256 totalUSDT = usdtToken.balanceOf(liquidityPoolAddress) +
-        usdtToken.balanceOf(emergencyAddress) +
-        usdtToken.balanceOf(address(this));
+    function calculateLiveRate() public view returns (uint256) {
+        uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
+        uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
+            liquidityAddress
+        );
+        uint256 baseRate = initialTokenRate * (10 ** 18);
 
-    // Add the staking balance separately without recursion
-    uint256 stakingBalance = ecryptoToken.balanceOf(stakingAddress);
-    totalUSDT += stakingBalance * baseRate; // Use base rate or a pre-calculated rate if needed
+        // Calculate total supply held by users
+        uint256 totalSupply = ecryptoToken.totalSupply();
+        uint256 totalSupplyOfUser = totalSupply -
+            (ecryptoTokenBal + liquidityTokenBalance);
 
-    // Calculate rate with a scaling factor for precision
-    uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
+        // If no tokens are held by users, return the base rate
+        if (totalSupplyOfUser == 0) {
+            return baseRate;
+        }
 
-    // Return the greater of rate or baseRate
-    return rate >= baseRate ? rate : baseRate;
+        // Calculate total USDT held across liquidity, emergency, and contract balances
+        uint256 totalUSDT = usdtToken.balanceOf(liquidityPoolAddress) +
+            usdtToken.balanceOf(emergencyAddress) +
+            usdtToken.balanceOf(address(this));
+
+        // Add the staking balance separately without recursion
+        uint256 stakingBalance = ecryptoToken.balanceOf(stakingAddress);
+        totalUSDT += stakingBalance * baseRate; // Use base rate or a pre-calculated rate if needed
+
+        // Calculate rate with a scaling factor for precision
+        uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
+
+        // Return the greater of rate or baseRate
+        return rate >= baseRate ? rate : baseRate;
     }
 
-   
-
-   function withdraw(uint256 amount, uint256 withType) external {
+    function withdraw(uint256 amount, uint256 withType) external {
         require(withType == 1 || withType == 2, "Invalid withdrawal type");
         require(amount >= minimumWithdrawal, "Minimum withdrawal amount is 5");
- 
+
         // Check if the user (msg.sender) is registered (i.e., they have made an investment)
         require(investments[msg.sender] > 0, "User is not registered");
- 
+
         uint256 fees = withdrawalFees; // Fee percentage
- 
+
         // Calculate available balances
         uint256 growthUsd = calculateGrowth(msg.sender);
         uint256 referralUsd = calculateReferralIncomeForTree(msg.sender);
         uint256 directReferralUsd = users[msg.sender].directBal;
         uint256 storedReferralUsd = users[msg.sender].referralBal;
- 
+
         // Total available balance for withdrawal
         uint256 totalUsd = growthUsd +
             referralUsd +
             directReferralUsd +
             storedReferralUsd -
             users[msg.sender].totalWithdrawal;
- 
+
         require(totalUsd >= amount, "Insufficient withdrawal amount");
- 
+
         // Ensure total withdrawals don't exceed 3x the user's investment
         require(
             users[msg.sender].totalWithdrawal + amount <=
                 investments[msg.sender] * 3,
             "Withdrawal amount exceeds 3x of your investment"
         );
- 
+
         uint256 feeUsd = (amount * fees) / 100; // Calculate fee amount in USD
         uint256 netAmount = amount - feeUsd; // Amount after fee deduction
- 
+
         if (withType == 1) {
             // USDT withdrawal
             uint256 feesInTokens = (feeUsd * precision) / calculateLiveRate(); // Convert fee to tokens based on live rate
- 
+
             if (feeUsd < precision) {
                 // Ensure a minimum fee in tokens
                 feesInTokens = (1 * precision) / calculateLiveRate();
             }
- 
+
             // Transfer net amount and fee
             usdtToken.safeTransfer(
                 msg.sender,
                 (netAmount * precision) / calculateLiveRate()
             ); // Convert net amount to tokens
             mintToken(feesAddress, feesInTokens);
- 
+
             emit Withdra(msg.sender, amount, withType);
             emit Mined(feesAddress, feesInTokens);
         } else if (withType == 2) {
             // Token withdrawal
             uint256 tokenAmount = (amount * precision) / calculateLiveRate(); // Convert withdrawal amount to tokens
             uint256 feesInTokens = (tokenAmount * fees) / 100; // Calculate fee in tokens
- 
+
             if (feeUsd < precision) {
                 // Ensure a minimum fee in tokens
-               feesInTokens = (1 * precision) / calculateLiveRate();
+                feesInTokens = (1 * precision) / calculateLiveRate();
             }
- 
+
             // Transfer net amount and fee
             mintToken(msg.sender, tokenAmount - feesInTokens);
             mintToken(feesAddress, feesInTokens);
- 
+
             emit Withdra(msg.sender, tokenAmount, withType);
             emit Mined(feesAddress, feesInTokens);
         }
- 
+
         // Update user's total withdrawal
         users[msg.sender].totalWithdrawal += amount;
- 
+
         // Log the withdrawal
         withdrawals[msg.sender].push(
             Withdrawal({
@@ -485,5 +536,4 @@ function calculateLiveRate() public view returns (uint256) {
             })
         );
     }
-
 }
