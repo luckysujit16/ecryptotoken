@@ -192,7 +192,7 @@ contract EcryptoStacking is Ownable(address(msg.sender)), UUPSUpgradeable, Initi
             }
         }
 
-        return totalReward; // Return the accumulated reward
+        return totalReward;
     }
 
     // Get users by particular duration
