@@ -40,7 +40,7 @@ contract EcyptoFinance {
     uint256 public minimumWithdrawal = 5; // In USDT
     uint256 public precision = 1e18; // In Wie
 
-    uint256 public withdrawalFees = 5;
+    uint256 public withdrawalFees = 5e18;
 
     uint256 public liquiditySharePercent = 50;
     uint256 public marketingSharePercent = 10;
@@ -135,10 +135,9 @@ contract EcyptoFinance {
 
     function invest(uint256 amount, address referrer) external {
         require(
-            amount > minimumDeposit * precision,
-            "Deposit must be greater than 5 USDT"
+            amount >= minimumDeposit * precision,
+            "Deposit must be greater than or equal to 5 USDT"
         );
-
         // Register the user if not already registered
         if (users[msg.sender].user == address(0)) {
             require(
@@ -166,12 +165,10 @@ contract EcyptoFinance {
 
             users[referrer].referrals.push(msg.sender);
         }
-
         // Add deposit details with timestamp
         deposits[msg.sender].push(
             Deposit({amount: amount, timestamp: block.timestamp})
         );
-
         // Pre-calculate the amount percentages to save gas
         uint256 liquidityShare = (amount * liquiditySharePercent) / 100;
         uint256 marketingShare = (amount * marketingSharePercent) / 100;
@@ -197,11 +194,6 @@ contract EcyptoFinance {
             100;
         investments[msg.sender] += amount;
 
-        uint256 growthTill = calculateGrowth(msg.sender);
-        if (growthTill > 0) {
-            users[msg.sender].balance += growthTill;
-        }
-
         emit Invested(msg.sender, amount);
     }
 
@@ -213,62 +205,50 @@ contract EcyptoFinance {
         require(users[user].user != address(0), "User does not exist");
 
         // Start the recursion from the root user (initial user) at level 1
-        totalReferralIncome = calculateIncomeForUser(user, 1);
+        totalReferralIncome = calculateIncomeFromChildDeposits(user, 1);
     }
 
-    function calculateIncomeForUser(address currentUser, uint256 level)
-        internal
-        view
-        returns (uint256)
-    {
+    function calculateIncomeFromChildDeposits(
+        address currentUser,
+        uint256 level
+    ) internal view returns (uint256) {
+        // Check if user is valid and level is within the allowed limit
         if (currentUser == address(0) || level > maxLevels) {
             return 0;
         }
 
-        uint256 totalIncome = 0;
+        uint256 totalChildIncome = 0;
+        uint256 dailyPercentage = 32876712320000000; // Adjusted daily percentage (scaled)
 
-        // Calculate daily percentage income only once
-        uint256 dailyPercentage = (referralLevelPer * 12) / (365 * 1e18);
-
-        // Get the user's deposits and calculate total business volume
-        Deposit[] storage userDeposits = deposits[currentUser]; // Use storage to avoid copying to memory
-        uint256 totalBusinessVolume = 0;
-
-        // Calculate total business volume from user deposits
-        for (uint256 i = 0; i < userDeposits.length; i++) {
-            totalBusinessVolume += userDeposits[i].amount;
-        }
-
-        // Get the business level only once
-        uint256 businessLevel = getBusinessLevel();
-
-        // Only calculate income if the user's business level is high enough
-        if (businessLevel >= level) {
-            for (uint256 i = 0; i < userDeposits.length; i++) {
-                Deposit storage currentDeposit = userDeposits[i];
-                uint256 daysPassed = calculateDaysSince(
-                    currentDeposit.timestamp
-                );
-
-                // Calculate daily income for this deposit
-                uint256 dailyIncome = (currentDeposit.amount *
-                    dailyPercentage) / 1e18;
-
-                // Add income from this deposit based on days passed
-                totalIncome += dailyIncome * daysPassed;
-            }
-        }
-
-        // Recursively calculate income from direct referrals
+        // Retrieve direct referrals of the current user
         address[] storage directReferrals = users[currentUser].referrals;
-        for (uint256 j = 0; j < directReferrals.length; j++) {
-            totalIncome += calculateIncomeForUser(
-                directReferrals[j],
+
+        // Loop through each direct referral to calculate income from their deposits
+        for (uint256 i = 0; i < directReferrals.length; i++) {
+            address referral = directReferrals[i];
+
+            // Retrieve deposits of the referral
+            Deposit[] storage referralDeposits = deposits[referral];
+
+            // Calculate daily income from each deposit made by this referral
+            for (uint256 j = 0; j < referralDeposits.length; j++) {
+                Deposit storage deposit = referralDeposits[j];
+                uint256 daysPassed = calculateDaysSince(deposit.timestamp);
+
+                // Calculate income for active days of this deposit
+                uint256 dailyIncome = (deposit.amount * dailyPercentage) / 1e20;
+
+                // Add income based on days this deposit has been active
+                totalChildIncome += dailyIncome * daysPassed;
+            }
+
+            // Recursively calculate income from indirect referrals of this referral
+            totalChildIncome += calculateIncomeFromChildDeposits(
+                referral,
                 level + 1
             );
         }
-
-        return totalIncome;
+        return totalChildIncome;
     }
 
     // Function to determine the business level based on the total business volume
@@ -280,20 +260,23 @@ contract EcyptoFinance {
         Deposit[] storage userDeposits = deposits[user];
         require(userDeposits.length > 0, "No deposits for this user");
 
-        Deposit storage lastDeposit = userDeposits[userDeposits.length - 1];
-
-        uint256 daysPassed = calculateDaysSince(lastDeposit.timestamp);
-
+        uint256 totalGrowth = 0;
         uint256 growthPer = getGrowthPer(investments[user]);
 
-        // Calculate per day percent using a higher precision to avoid decimals
-        uint256 perDayPercent = growthPer; // Keep perDayPercent scaled up by 1e18
+        for (uint256 i = 0; i < userDeposits.length; i++) {
+            Deposit storage deposit = userDeposits[i];
 
-        // Calculate per day income while preserving precision
-        uint256 perDayIncome = (investments[user] * perDayPercent) / 100e18; // Divide by 1e18 to scale back to normal
+            // Calculate the number of days since this deposit
+            uint256 daysPassed = calculateDaysSince(deposit.timestamp);
 
-        // Calculate total growth based on days passed, keeping it in uint256
-        return perDayIncome * daysPassed;
+            // Calculate per day income for this deposit
+            uint256 perDayIncome = (deposit.amount * growthPer) / 100e18;
+
+            // Add to total growth based on days passed
+            totalGrowth += perDayIncome * daysPassed;
+        }
+
+        return totalGrowth;
     }
 
     function calculateDaysSince(uint256 timestamp)
@@ -314,11 +297,11 @@ contract EcyptoFinance {
         returns (uint256)
     {
         if (investedAmount >= 5000 * 10**18) {
-            return 131506849315068500; 
+            return 131506849315068500;
         } else if (investedAmount >= 1000 * 10**18) {
-            return 197260273972602700; 
+            return 197260273972602700;
         } else if (investedAmount >= 500 * 10**18) {
-            return 164383561643835600; 
+            return 164383561643835600;
         } else if (investedAmount >= 5 * 10**18) {
             return 131506849315068500;
         } else {
@@ -343,6 +326,14 @@ contract EcyptoFinance {
         return deposits[user];
     }
 
+     function getUserWithdrawals(address user)
+        external
+        view
+        returns (Withdrawal[] memory)
+    {
+        return withdrawals[user];
+    }
+
     // Function to get all users' addresses
     function getUsers() external view returns (address[] memory) {
         return userAddresses;
@@ -353,37 +344,42 @@ contract EcyptoFinance {
         return ecryptoTokenStakingBal * rate;
     }
 
-    function calculateLiveRate() public view returns (uint256) {
+   function calculateLiveRate() public view returns (uint256) {
         uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
         uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
             liquidityAddress
         );
-        uint256 baseRate = initialTokenRate * (10**18);
-
+        uint256 stakedTokenBalance = ecryptoToken.balanceOf(stakingAddress);
+        uint256 baseRate = initialTokenRate * (10 ** 18);
+       
+ 
         // Calculate total supply held by users
         uint256 totalSupply = ecryptoToken.totalSupply();
         uint256 totalSupplyOfUser = totalSupply -
-            (ecryptoTokenBal + liquidityTokenBalance);
-
+            (ecryptoTokenBal + liquidityTokenBalance + stakedTokenBalance);
+ 
         // If no tokens are held by users, return the base rate
         if (totalSupplyOfUser == 0) {
             return baseRate;
         }
-
-        // Calculate total USDT held across liquidity, emergency, and contract balances
+ 
+        // Calculate total USDT held in liquidity, emergency, and contract addresses
         uint256 totalUSDT = usdtToken.balanceOf(liquidityPoolAddress) +
             usdtToken.balanceOf(emergencyAddress) +
             usdtToken.balanceOf(address(this));
-
-        // Add the staking balance separately without recursion
-        uint256 stakingBalance = ecryptoToken.balanceOf(stakingAddress);
-        totalUSDT += stakingBalance * baseRate; // Use base rate or a pre-calculated rate if needed
-
-        // Calculate rate with a scaling factor for precision
+ 
+        // Calculate an initial rate based on current totalUSDT and user-held supply
         uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
-
-        // Return the greater of rate or baseRate
-        return rate >= baseRate ? rate : baseRate;
+ 
+        // Calculate the staking portion with this live rate
+        uint256 stakingUsdBalance = (stakedTokenBalance * rate) / precision;
+        uint256 adjustedTotalUSDT = totalUSDT + stakingUsdBalance;
+ 
+        // Recalculate the final rate with the updated total USDT
+        uint256 finalRate = (adjustedTotalUSDT * precision) / totalSupplyOfUser;
+ 
+        // Return the greater of the calculated rate or baseRate
+        return finalRate >= baseRate ? finalRate : baseRate;
     }
 
     function withdraw(uint256 amount, uint256 withType) external {
@@ -427,37 +423,38 @@ contract EcyptoFinance {
         uint256 amount,
         uint256 withType
     ) internal {
-        uint256 feeUsd = (amount * withdrawalFees) / 100;
+        uint256 feeUsd = (amount * withdrawalFees) / 100e18;
         uint256 netAmount = amount - feeUsd;
-
+ 
         // Calculate fee and net amount in tokens
         uint256 liveRate = calculateLiveRate();
         uint256 feeTokens = (feeUsd * precision) / liveRate;
-        uint256 netTokens = (netAmount * precision) / liveRate;
-
+        // uint256 netTokens = (netAmount * precision) / liveRate;
+ 
         // Ensure minimum fee in tokens
         if (feeUsd < precision) {
             feeTokens = (1 * precision) / liveRate;
+            netAmount = amount - 1e18;
         }
-
+ 
         if (withType == 1) {
             // USDT withdrawal
-            usdtToken.safeTransfer(user, netTokens);
+            usdtToken.safeTransfer(user, netAmount);
         } else if (withType == 2) {
             // Token withdrawal
-            mintToken(user, (amount * precision) / liveRate - feeTokens);
+            mintToken(user, (amount / liveRate) - feeTokens);
         }
-
+ 
         // Mint tokens for the fee
-        mintToken(feesAddress, feeTokens);
-
+        mintToken(feesAddress, feeTokens * precision);
+ 
         // Emit events
         emit Withdra(user, amount, withType);
-        emit Mined(feesAddress, feeTokens);
-
+        emit Mined(feesAddress, feeTokens * precision);
+ 
         // Update user's total withdrawal
         users[user].totalWithdrawal += amount;
-
+ 
         // Log the withdrawal
         withdrawals[user].push(
             Withdrawal({
@@ -468,10 +465,3 @@ contract EcyptoFinance {
         );
     }
 }
-
-/**
- * @notice Mints tokens to the specified recipient
- * @dev Mints tokens to the recipient, emitting a Mined event
- * @param _recipient The address to mint tokens to
- * @param _amount The amount of tokens to mint
- */
