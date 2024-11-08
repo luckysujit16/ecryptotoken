@@ -10,6 +10,19 @@ interface IEcryptoToken {
     function totalSupply() external view returns (uint256);
 
     function balanceOf(address account) external view returns (uint256);
+
+    function transfer(address to, uint256 amount) external returns (bool);
+
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) external returns (bool);
+
+    function allowance(
+        address owner,
+        address spender
+    ) external view returns (uint256);
 }
 
 contract EcyptoFinance {
@@ -25,11 +38,14 @@ contract EcyptoFinance {
     address public promoAddress;
     address public adminAddress;
     address public emergencyAddress;
-    address public liquidityPoolAddress;
     address public stakingAddress;
     address public feesAddress;
 
     address public tokenAddress;
+
+    uint256 public totalUsdPaid;
+    uint256 public totalEcryptoPaid;
+    uint256 public totalWithdrawals;
 
     uint256 public directReferralPer = 5e18; // One Time
     uint256 public referralLevelPer = 1e18; // monthly
@@ -73,18 +89,26 @@ contract EcyptoFinance {
     struct Withdrawal {
         uint256 amount;
         uint256 timestamp;
+        uint256 rate;
         uint256 withType;
+    }
+    struct Redeems {
+        uint256 amount;
+        uint256 timestamp;
+        uint256 rate;
     }
 
     mapping(address => User) public users;
     mapping(address => Deposit[]) public deposits;
     mapping(address => Withdrawal[]) public withdrawals;
+    mapping(address => Redeems[]) public redeems;
     address[] public userAddresses;
     mapping(address => uint256) public investments;
 
     event Invested(address indexed user, uint256 amount);
     event Mined(address indexed user, uint256 amount);
     event Withdra(address indexed user, uint256 amount, uint256 withType);
+    event Redeem(address indexed user, uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -99,7 +123,6 @@ contract EcyptoFinance {
         address _promoAddress,
         address _adminAddress,
         address _emergencyAddress,
-        address _liquidityPoolAddress,
         address _stakingAddress,
         address _feesAddress
     ) {
@@ -112,7 +135,6 @@ contract EcyptoFinance {
         promoAddress = _promoAddress;
         adminAddress = _adminAddress;
         emergencyAddress = _emergencyAddress;
-        liquidityPoolAddress = _liquidityPoolAddress;
         tokenAddress = _tokenAddress;
         stakingAddress = _stakingAddress;
         feesAddress = _feesAddress;
@@ -200,11 +222,9 @@ contract EcyptoFinance {
         emit Invested(msg.sender, amount);
     }
 
-    function calculateReferralIncomeForTree(address user)
-        public
-        view
-        returns (uint256 totalReferralIncome)
-    {
+    function calculateReferralIncomeForTree(
+        address user
+    ) public view returns (uint256 totalReferralIncome) {
         require(users[user].user != address(0), "User does not exist");
 
         // Start the recursion from the root user (initial user) at level 1
@@ -282,30 +302,26 @@ contract EcyptoFinance {
         return totalGrowth;
     }
 
-    function calculateDaysSince(uint256 timestamp)
-        public
-        view
-        returns (uint256)
-    {
+    function calculateDaysSince(
+        uint256 timestamp
+    ) public view returns (uint256) {
         if (block.timestamp > timestamp) {
-            return (block.timestamp - timestamp) / 10 minutes;
+            return (block.timestamp - timestamp) / 1 minutes;
         } else {
             return 0;
         }
     }
 
-    function getGrowthPer(uint256 investedAmount)
-        internal
-        pure
-        returns (uint256)
-    {
-        if (investedAmount >= 5000 * 10**18) {
+    function getGrowthPer(
+        uint256 investedAmount
+    ) internal pure returns (uint256) {
+        if (investedAmount >= 5000 * 10 ** 18) {
             return 131506849315068500;
-        } else if (investedAmount >= 1000 * 10**18) {
+        } else if (investedAmount >= 1000 * 10 ** 18) {
             return 197260273972602700;
-        } else if (investedAmount >= 500 * 10**18) {
+        } else if (investedAmount >= 500 * 10 ** 18) {
             return 164383561643835600;
-        } else if (investedAmount >= 5 * 10**18) {
+        } else if (investedAmount >= 5 * 10 ** 18) {
             return 131506849315068500;
         } else {
             return 0; // No growth rate for amounts less than 5e18
@@ -321,19 +337,15 @@ contract EcyptoFinance {
         emit Mined(recipient, amount);
     }
 
-    function getUserDeposits(address user)
-        external
-        view
-        returns (Deposit[] memory)
-    {
+    function getUserDeposits(
+        address user
+    ) external view returns (Deposit[] memory) {
         return deposits[user];
     }
 
-     function getUserWithdrawals(address user)
-        external
-        view
-        returns (Withdrawal[] memory)
-    {
+    function getUserWithdrawals(
+        address user
+    ) external view returns (Withdrawal[] memory) {
         return withdrawals[user];
     }
 
@@ -347,40 +359,39 @@ contract EcyptoFinance {
         return ecryptoTokenStakingBal * rate;
     }
 
-   function calculateLiveRate() public view returns (uint256) {
+    function calculateLiveRate() public view returns (uint256) {
         uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
         uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
             liquidityAddress
         );
         uint256 stakedTokenBalance = ecryptoToken.balanceOf(stakingAddress);
         uint256 baseRate = initialTokenRate;
-       
- 
+
         // Calculate total supply held by users
         uint256 totalSupply = ecryptoToken.totalSupply();
         uint256 totalSupplyOfUser = totalSupply -
             (ecryptoTokenBal + liquidityTokenBalance + stakedTokenBalance);
- 
+
         // If no tokens are held by users, return the base rate
         if (totalSupplyOfUser == 0) {
             return baseRate;
         }
- 
+
         // Calculate total USDT held in liquidity, emergency, and contract addresses
-        uint256 totalUSDT = usdtToken.balanceOf(liquidityPoolAddress) +
+        uint256 totalUSDT = usdtToken.balanceOf(liquidityAddress) +
             usdtToken.balanceOf(emergencyAddress) +
             usdtToken.balanceOf(address(this));
- 
+
         // Calculate an initial rate based on current totalUSDT and user-held supply
         uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
- 
+
         // Calculate the staking portion with this live rate
         uint256 stakingUsdBalance = (stakedTokenBalance * rate) / precision;
         uint256 adjustedTotalUSDT = totalUSDT + stakingUsdBalance;
- 
+
         // Recalculate the final rate with the updated total USDT
         uint256 finalRate = (adjustedTotalUSDT * precision) / totalSupplyOfUser;
- 
+
         // Return the greater of the calculated rate or baseRate
         return finalRate >= baseRate ? finalRate : baseRate;
     }
@@ -428,43 +439,86 @@ contract EcyptoFinance {
     ) internal {
         uint256 feeUsd = (amount * withdrawalFees) / devider;
         uint256 netAmount = amount - feeUsd;
- 
+
         // Calculate fee and net amount in tokens
         uint256 liveRate = calculateLiveRate();
         uint256 feeTokens = (feeUsd * precision) / liveRate;
         // uint256 netTokens = (netAmount * precision) / liveRate;
- 
+
         // Ensure minimum fee in tokens
         if (feeUsd < precision) {
             feeTokens = (1 * precision) / liveRate;
             netAmount = amount - 1e18;
         }
- 
+
         if (withType == 1) {
             // USDT withdrawal
             usdtToken.safeTransfer(user, netAmount);
+            totalUsdPaid += amount;
         } else if (withType == 2) {
             // Token withdrawal
             mintToken(user, (amount / liveRate) - feeTokens);
+            totalEcryptoPaid += amount / liveRate;
         }
- 
+
         // Mint tokens for the fee
         mintToken(feesAddress, feeTokens * precision);
- 
+
         // Emit events
         emit Withdra(user, amount, withType);
         emit Mined(feesAddress, feeTokens * precision);
- 
+
         // Update user's total withdrawal
         users[user].totalWithdrawal += amount;
- 
+        totalWithdrawals += amount;
         // Log the withdrawal
         withdrawals[user].push(
             Withdrawal({
                 amount: amount,
                 timestamp: block.timestamp,
+                rate: liveRate,
                 withType: withType
             })
         );
+    }
+
+    function redeemEcrypto(uint256 amount) external {
+        require(amount >= 1, "Invalid amount");
+
+        // Calculate USD equivalent only once for gas optimization
+        uint256 rate = calculateLiveRate();
+        uint256 usdAmount = amount * rate;
+
+        // Check user’s Ecrypto balance and contract’s USDT balance in a single step
+        require(
+            ecryptoToken.balanceOf(msg.sender) >= amount &&
+                usdtToken.balanceOf(address(this)) >= usdAmount,
+            "Insufficient balance"
+        );
+
+        // Transfer Ecrypto tokens from user to contract
+        ecryptoToken.transferFrom(msg.sender, address(this), amount);
+
+        // Transfer equivalent USDT to the user using safe transfer
+        usdtToken.safeTransfer(msg.sender, usdAmount);
+        emit Redeem(msg.sender, amount);
+        redeems[msg.sender].push(
+            Redeems({amount: amount, rate: rate, timestamp: block.timestamp})
+        );
+    }
+
+    function withdrawEcrypto(uint256 amount) external onlyOwner {
+        // Check if the total supply is at least 21 million tokens (assuming 18 decimals)
+        require(
+            ecryptoToken.totalSupply() >=  21000000 * 10 ** 18,
+            "Minimum supply not met"
+        );
+        // Check if the contract has enough balance to fulfill the withdrawal
+        require(
+            ecryptoToken.balanceOf(address(this)) >= amount,
+            "Insufficient contract Ecrypto balance"
+        );
+        // Transfer the specified amount of Ecrypto to the owner
+        ecryptoToken.transfer(msg.sender, amount);
     }
 }
