@@ -250,6 +250,15 @@ contract EcyptoFinance {
         for (uint256 i = 0; i < directReferrals.length; i++) {
             address referral = directReferrals[i];
 
+            // Calculate the business volume for this referral's deposits
+            uint256 referralBusinessVolume = calculateBusinessVolume(referral);
+            
+            // Check if this referral's business volume qualifies for the required level
+            uint256 referralBusinessLevel = getBusinessLevel(referralBusinessVolume);
+            if (referralBusinessLevel < level) {
+                continue; // Skip if the referral's business level does not meet the required level
+            }
+
             // Retrieve deposits of the referral
             Deposit[] storage referralDeposits = deposits[referral];
 
@@ -274,9 +283,43 @@ contract EcyptoFinance {
         return totalChildIncome;
     }
 
-    // Function to determine the business level based on the total business volume
-    function getBusinessLevel() public pure returns (uint256 level) {
-        return 10;
+    // Helper function to calculate the business volume of a user (sum of all deposits)
+    function calculateBusinessVolume(address user) internal view returns (uint256) {
+        Deposit[] storage userDeposits = deposits[user];
+        uint256 businessVolume = 0;
+
+        for (uint256 i = 0; i < userDeposits.length; i++) {
+            businessVolume += userDeposits[i].amount;
+        }
+
+        return businessVolume;
+    }
+
+
+    function getBusinessLevel(
+        uint256 businessVolume
+    ) public pure returns (uint256) {
+        uint256 presi = 1e18;
+        uint256[10] memory thresholds = [
+            2000000000 * presi, // 2 Billion
+            375000000 * presi, // 375 Million
+            75000000 * presi, // 75 Million
+            15000000 * presi, // 15 Million
+            3000000 * presi, // 3 Million
+            600000 * presi, // 0.6 Million
+            125000 * presi, // 125K
+            25000 * presi, // 25K
+            5000 * presi, // 5K
+            1000 * presi // 1K
+        ];
+
+        for (uint256 i = 0; i < thresholds.length; i++) {
+            if (businessVolume >= thresholds[i]) {
+                return 10 - i;
+            }
+        }
+
+        return 0;
     }
 
     function calculateGrowth(address user) public view returns (uint256) {
@@ -510,7 +553,7 @@ contract EcyptoFinance {
     function withdrawEcrypto(uint256 amount) external onlyOwner {
         // Check if the total supply is at least 21 million tokens (assuming 18 decimals)
         require(
-            ecryptoToken.totalSupply() >=  21000000 * 10 ** 18,
+            ecryptoToken.totalSupply() >= 21000000 * 10 ** 18,
             "Minimum supply not met"
         );
         // Check if the contract has enough balance to fulfill the withdrawal
