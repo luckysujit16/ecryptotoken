@@ -296,30 +296,43 @@ contract EcyptoFinance {
     }
 
 
+    // Function to determine the business level based on the total business volume
     function getBusinessLevel(
         uint256 businessVolume
-    ) public pure returns (uint256) {
-        uint256 presi = 1e18;
-        uint256[10] memory thresholds = [
-            2000000000 * presi, // 2 Billion
-            375000000 * presi, // 375 Million
-            75000000 * presi, // 75 Million
-            15000000 * presi, // 15 Million
-            3000000 * presi, // 3 Million
-            600000 * presi, // 0.6 Million
-            125000 * presi, // 125K
-            25000 * presi, // 25K
-            5000 * presi, // 5K
-            1000 * presi // 1K
-        ];
-
-        for (uint256 i = 0; i < thresholds.length; i++) {
-            if (businessVolume >= thresholds[i]) {
-                return 10 - i;
-            }
+    ) public pure returns (uint256 level) {
+        if (businessVolume >= 2 * 10 ** 9) {
+            // 2 Billion
+            return 10;
+        } else if (businessVolume >= 375 * 10 ** 6) {
+            // 375 Million
+            return 9;
+        } else if (businessVolume >= 75 * 10 ** 6) {
+            // 75 Million
+            return 8;
+        } else if (businessVolume >= 15 * 10 ** 6) {
+            // 15 Million
+            return 7;
+        } else if (businessVolume >= 3 * 10 ** 6) {
+            // 3 Million
+            return 6;
+        } else if (businessVolume >= 600000) {
+            // 0.6 Million
+            return 5;
+        } else if (businessVolume >= 125000) {
+            // 125K
+            return 4;
+        } else if (businessVolume >= 25000) {
+            // 25K
+            return 3;
+        } else if (businessVolume >= 5000) {
+            // 5K
+            return 2;
+        } else if (businessVolume >= 1000) {
+            // 1K
+            return 1;
+        } else {
+            return 0; // No qualification
         }
-
-        return 0;
     }
 
     function calculateGrowth(address user) public view returns (uint256) {
@@ -553,7 +566,7 @@ contract EcyptoFinance {
     function withdrawEcrypto(uint256 amount) external onlyOwner {
         // Check if the total supply is at least 21 million tokens (assuming 18 decimals)
         require(
-            ecryptoToken.totalSupply() >= 21000000 * 10 ** 18,
+            ecryptoToken.totalSupply() >=  21000000 * 10 ** 18,
             "Minimum supply not met"
         );
         // Check if the contract has enough balance to fulfill the withdrawal
