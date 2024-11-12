@@ -309,25 +309,25 @@ contract EcyptoFinance {
         } else if (businessVolume >= 75 * 10 ** 6) {
             // 75 Million
             return 8;
-        } else if (businessVolume >= 15 * 10 ** 6) {
+        } else if (businessVolume >= 15000000 * 1e18) {
             // 15 Million
             return 7;
-        } else if (businessVolume >= 3 * 10 ** 6) {
+        } else if (businessVolume >= 3000000 * 1e18) {
             // 3 Million
             return 6;
-        } else if (businessVolume >= 600000) {
+        } else if (businessVolume >= 600000 * 1e18) {
             // 0.6 Million
             return 5;
-        } else if (businessVolume >= 125000) {
+        } else if (businessVolume >= 125000 * 1e18) {
             // 125K
             return 4;
-        } else if (businessVolume >= 25000) {
+        } else if (businessVolume >= 25000 * 1e18) {
             // 25K
             return 3;
-        } else if (businessVolume >= 5000) {
+        } else if (businessVolume >= 5000 * 1e18) {
             // 5K
             return 2;
-        } else if (businessVolume >= 1000) {
+        } else if (businessVolume >= 1000 * 1e18) {
             // 1K
             return 1;
         } else {
