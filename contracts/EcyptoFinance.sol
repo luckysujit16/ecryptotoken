@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -33,7 +34,10 @@ contract EcyptoFinance {
     address public owner;
 
     // Addresses for various payments
-    address public liquidityAddress;
+    address public liquidityAddressUSDT;
+    address public liquidityAddressBNB;
+    address public liquidityAddressETH;
+    address public liquidityAddressBTC;
     address public marketingAddress;
     address public promoAddress;
     address public adminAddress;
@@ -118,7 +122,10 @@ contract EcyptoFinance {
     constructor(
         address _tokenAddress,
         address _usdtTokenAddress,
-        address _liquidityAddress,
+        address _liquidityAddressUSDT,
+        address _liquidityAddressBNB,
+        address _liquidityAddressETH,
+        address _liquidityAddressBTC,
         address _marketingAddress,
         address _promoAddress,
         address _adminAddress,
@@ -130,7 +137,10 @@ contract EcyptoFinance {
         usdtToken = IERC20(_usdtTokenAddress);
         owner = msg.sender;
 
-        liquidityAddress = _liquidityAddress;
+        liquidityAddressUSDT = _liquidityAddressUSDT;
+        liquidityAddressBNB = _liquidityAddressBNB;
+        liquidityAddressETH = _liquidityAddressETH;
+        liquidityAddressBTC = _liquidityAddressBTC;
         marketingAddress = _marketingAddress;
         promoAddress = _promoAddress;
         adminAddress = _adminAddress;
@@ -205,7 +215,7 @@ contract EcyptoFinance {
         uint256 contractShare = (amount * contractSharePercent) / devider;
 
         // Transfer USDT to respective addresses
-        transferUsd(liquidityAddress, liquidityShare);
+        
         transferUsd(marketingAddress, marketingShare);
         transferUsd(promoAddress, promoShare);
         transferUsd(adminAddress, adminShare);
@@ -213,13 +223,30 @@ contract EcyptoFinance {
         transferUsd(address(this), contractShare);
 
         // Mint tokens as a reward to the liquidity pool
-        mintToken(liquidityAddress, tokenLiquidityShare);
+        
+        checkLiquidity(amount, tokenLiquidityShare, liquidityShare);
         users[users[msg.sender].referrer].directBal +=
             (amount * directReferralPer) /
             devider;
         investments[msg.sender] += amount;
 
         emit Invested(msg.sender, amount);
+    }
+
+    function checkLiquidity(uint256 amount, uint256 tokenShare, uint256 usdtShare) internal {
+        if (amount >= 5000 * 10**18) {
+            mintToken(liquidityAddressBTC, tokenShare);
+            transferUsd(liquidityAddressBTC, usdtShare);
+        } else if (amount >= 1000 * 10**18) {
+           mintToken(liquidityAddressETH, tokenShare);
+           transferUsd(liquidityAddressETH, usdtShare);
+        } else if (amount >= 500 * 10**18) {
+            mintToken(liquidityAddressBNB, tokenShare);
+            transferUsd(liquidityAddressBNB, usdtShare);
+        } else if (amount >= 5 * 10**18) {
+            mintToken(liquidityAddressUSDT, tokenShare);
+            transferUsd(liquidityAddressUSDT, usdtShare);
+        } 
     }
 
     function calculateReferralIncomeForTree(address user)
@@ -309,13 +336,13 @@ contract EcyptoFinance {
         pure
         returns (uint256 level)
     {
-        if (businessVolume >= 1) {
-            // 2 Billion
+        if (businessVolume >= 1875000000 * 1e18) {
+            // 1.87 Billion
             return 10;
-        } else if (businessVolume >= 1) {
+        } else if (businessVolume >= 375000000 * 1e18) {
             // 375 Million
             return 9;
-        } else if (businessVolume >= 1) {
+        } else if (businessVolume >= 75000000 * 1e18) {
             // 75 Million
             return 8;
         } else if (businessVolume >= 15000000 * 1e18) {
@@ -373,7 +400,7 @@ contract EcyptoFinance {
         returns (uint256)
     {
         if (block.timestamp > timestamp) {
-            return (block.timestamp - timestamp) / 1 seconds;
+            return (block.timestamp - timestamp) / 1 days;
         } else {
             return 0;
         }
@@ -529,41 +556,54 @@ contract EcyptoFinance {
     }
 
     function calculateLiveRate() public view returns (uint256) {
-        uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
-        uint256 liquidityTokenBalance = ecryptoToken.balanceOf(
-            liquidityAddress
-        );
-        uint256 stakedTokenBalance = ecryptoToken.balanceOf(stakingAddress);
-        uint256 baseRate = initialTokenRate;
+    // Fetch balances in a single statement to minimize storage access
+    uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
+    uint256 liquidityTokenBalance = 
+        ecryptoToken.balanceOf(liquidityAddressBTC) +
+        ecryptoToken.balanceOf(liquidityAddressETH) +
+        ecryptoToken.balanceOf(liquidityAddressBNB) +
+        ecryptoToken.balanceOf(liquidityAddressUSDT);
+    uint256 stakedTokenBalance = ecryptoToken.balanceOf(stakingAddress);
+    uint256 totalSupply = ecryptoToken.totalSupply();
 
-        // Calculate total supply held by users
-        uint256 totalSupply = ecryptoToken.totalSupply();
-        uint256 totalSupplyOfUser = totalSupply -
-            (ecryptoTokenBal + liquidityTokenBalance + stakedTokenBalance);
+    uint256 baseRate = initialTokenRate;
 
-        // If no tokens are held by users, return the base rate
-        if (totalSupplyOfUser == 0) {
-            return baseRate;
-        }
+    // Calculate tokens held by users
+    uint256 totalSupplyOfUser = totalSupply - (
+        ecryptoTokenBal + liquidityTokenBalance + stakedTokenBalance
+    );
 
-        // Calculate total USDT held in liquidity, emergency, and contract addresses
-        uint256 totalUSDT = usdtToken.balanceOf(liquidityAddress) +
-            usdtToken.balanceOf(emergencyAddress) +
-            usdtToken.balanceOf(address(this));
-
-        // Calculate an initial rate based on current totalUSDT and user-held supply
-        uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
-
-        // Calculate the staking portion with this live rate
-        uint256 stakingUsdBalance = (stakedTokenBalance * rate) / precision;
-        uint256 adjustedTotalUSDT = totalUSDT + stakingUsdBalance;
-
-        // Recalculate the final rate with the updated total USDT
-        uint256 finalRate = (adjustedTotalUSDT * precision) / totalSupplyOfUser;
-
-        // Return the greater of the calculated rate or baseRate
-        return finalRate >= baseRate ? finalRate : baseRate;
+    // If no tokens are held by users, return the base rate
+    if (totalSupplyOfUser == 0) {
+        return baseRate;
     }
+
+    // Calculate total USDT in liquidity
+    uint256 totalLiquidityUSDT = 
+        usdtToken.balanceOf(liquidityAddressUSDT) +
+        usdtToken.balanceOf(liquidityAddressBNB) +
+        usdtToken.balanceOf(liquidityAddressETH) +
+        usdtToken.balanceOf(liquidityAddressBTC);
+
+    // Include emergency and contract balances
+    uint256 totalUSDT = totalLiquidityUSDT +
+        usdtToken.balanceOf(emergencyAddress) +
+        usdtToken.balanceOf(address(this));
+
+    // Calculate the rate based on total USDT and user-held supply
+    uint256 rate = (totalUSDT * precision) / totalSupplyOfUser;
+
+    // Adjust the rate with staking balance
+    uint256 stakingUsdBalance = (stakedTokenBalance * rate) / precision;
+    uint256 adjustedTotalUSDT = totalUSDT + stakingUsdBalance;
+
+    // Recalculate the final rate
+    uint256 finalRate = (adjustedTotalUSDT * precision) / totalSupplyOfUser;
+
+    // Return the greater of finalRate or baseRate
+    return finalRate > baseRate ? finalRate : baseRate;
+}
+
 
     function redeemEcrypto(uint256 amount) external {
         require(amount >= 1, "Invalid amount");
@@ -604,4 +644,29 @@ contract EcyptoFinance {
         // Transfer the specified amount of Ecrypto to the owner
         ecryptoToken.transfer(msg.sender, amount);
     }
+
+    function setStakingAddress(address _stakingAddress) external onlyOwner {
+        stakingAddress = _stakingAddress;
+    }
+
+    function setfeesAddress(address _feesAddress) external onlyOwner {
+        feesAddress = _feesAddress;
+    }
+
+    function setliquidityAddressUSDT(address _liquidityAddressUSDT) external onlyOwner {
+        liquidityAddressUSDT = _liquidityAddressUSDT;
+    }
+
+    function setliquidityAddressBNB(address _liquidityAddressBNB) external onlyOwner {
+        liquidityAddressBNB = _liquidityAddressBNB;
+    }
+
+    function setliquidityAddressETH(address _liquidityAddressETH) external onlyOwner {
+        liquidityAddressETH = _liquidityAddressETH;
+    }
+
+    function setliquidityAddressBTC(address _liquidityAddressBTC) external onlyOwner {
+        liquidityAddressBTC = _liquidityAddressBTC;
+    }
+    
 }
