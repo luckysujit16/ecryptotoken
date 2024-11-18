@@ -73,7 +73,7 @@ contract EcryptoStacking is Ownable(address(msg.sender)), UUPSUpgradeable, Initi
     function stake(uint256 _amount, uint256 _duration) external {
         require(_amount > 0, "Cannot stake 0");
         require(
-            _duration == 30 ||
+                _duration == 30 ||
                 _duration == 90 ||
                 _duration == 180 ||
                 _duration == 365,
@@ -105,7 +105,7 @@ contract EcryptoStacking is Ownable(address(msg.sender)), UUPSUpgradeable, Initi
 
         require(
             block.timestamp >=
-                userStake.startTime + (userStake.duration * 1 days),
+                userStake.startTime + (userStake.duration * 1 minutes),
             "Staking period not complete"
         );
 
