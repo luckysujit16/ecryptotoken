@@ -19,7 +19,7 @@ interface IEcryptoToken {
         address to,
         uint256 amount
     ) external returns (bool);
-    
+
     function allowance(address owner, address spender)
         external
         view
@@ -58,6 +58,7 @@ contract EcyptoFinance {
 
     uint256 public minimumDeposit = 5e18; // In USDT
     uint256 public minimumWithdrawal = 5e18; // In USDT
+    
     uint256 public precision = 1e18; // In Wie
 
     uint256 public withdrawalFees = 5;
@@ -400,7 +401,7 @@ contract EcyptoFinance {
         returns (uint256)
     {
         if (block.timestamp > timestamp) {
-            return (block.timestamp - timestamp) / 1 days;
+            return (block.timestamp - timestamp) / 1 days;            
         } else {
             return 0;
         }
@@ -606,34 +607,53 @@ contract EcyptoFinance {
 
 
     function redeemEcrypto(uint256 amount) external {
-        require(amount >= 1, "Invalid amount");
+    require(amount >= 1e18, "Invalid amount"); // Ensure at least 1 eCrypto is redeemed
 
-        // Calculate USD equivalent only once for gas optimization
-        uint256 rate = calculateLiveRate();
-        uint256 usdAmount = amount * rate;
+    // Get the live rate
+    uint256 rate = calculateLiveRate();
 
-        // Check user’s Ecrypto balance and contract’s USDT balance in a single step
-        require(
-            ecryptoToken.balanceOf(msg.sender) >= amount &&
-                usdtToken.balanceOf(address(this)) >= usdAmount,
-            "Insufficient balance"
-        );
+    // Calculate USD equivalent (consider token decimals)
+    uint256 usdAmount = (amount * rate) / 1e18; // Adjust for eCrypto's 18 decimals
 
-        // Transfer Ecrypto tokens from user to contract
-        ecryptoToken.transferFrom(msg.sender, address(this), amount);
+    // Ensure the user has sufficient eCrypto balance
+    require(
+        ecryptoToken.balanceOf(msg.sender) >= amount,
+        "Insufficient eCrypto balance in user wallet"
+    );
 
-        // Transfer equivalent USDT to the user using safe transfer
-        usdtToken.safeTransfer(msg.sender, usdAmount);
-        emit Redeem(msg.sender, amount);
-        redeems[msg.sender].push(
-            Redeems({amount: amount, rate: rate, timestamp: block.timestamp})
-        );
+    // Ensure the contract has enough USDT balance
+    require(
+        usdtToken.balanceOf(address(this)) >= usdAmount,
+        "Insufficient USDT balance in Finance Contract"
+    );
+
+    // Transfer eCrypto tokens from the user to the contract
+    ecryptoToken.transferFrom(msg.sender, address(this), amount);
+
+    // Transfer the equivalent USDT amount to the user
+    usdtToken.safeTransfer(msg.sender, usdAmount);
+
+    // Emit an event for the redemption
+    emit Redeem(msg.sender, amount);
+
+    // Record the redemption
+    redeems[msg.sender].push(
+        Redeems({amount: amount, rate: rate, timestamp: block.timestamp})
+    );
     }
+
+    function checkContractUSDBal(uint256 amount) public view returns (uint256 usdAmount, uint256 contractUSDBal) {
+        uint256 liveRate = calculateLiveRate();
+        usdAmount = amount * liveRate / 1e18;
+        return (usdAmount, usdtToken.balanceOf(address(this)));
+    }
+       
 
     function withdrawEcrypto(uint256 amount) external onlyOwner {
         // Check if the total supply is at least 21 million tokens (assuming 18 decimals)
         require(
-            ecryptoToken.totalSupply() >= 21000000 * 10**18,
+            // ecryptoToken.totalSupply() >= 21000000 * 10**18, 
+            ecryptoToken.totalSupply() >= 49 * 10**18,
             "Minimum supply not met"
         );
         // Check if the contract has enough balance to fulfill the withdrawal
