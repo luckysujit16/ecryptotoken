@@ -59,9 +59,9 @@ contract EcryptoStacking is
         feeWallet = _feeWallet;
         adminWallet = _adminWallet;
         rewardRates[30] = 2;
-        rewardRates[90] = 18;
-        rewardRates[180] = 30;
-        rewardRates[365] = 50;
+        rewardRates[90] = 10;
+        rewardRates[180] = 25;
+        rewardRates[365] = 63;
         lastUpdateTime = block.timestamp;
 
         // Transfer ownership

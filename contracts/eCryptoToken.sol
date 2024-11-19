@@ -10,7 +10,7 @@ contract EcryptoToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
     uint256 public MAX_SUPPLY = 21000000 * 10 ** decimals();
  
     function initialize() public initializer {
-        __ERC20_init("EcryptoT", "ECRYPT");
+        __ERC20_init("Ecrypto", "ECRYPT");
         __Ownable_init(msg.sender); // Allows owner control
         _mint(msg.sender, 50 * 10 ** decimals()); // Initial mint for the owner
     }

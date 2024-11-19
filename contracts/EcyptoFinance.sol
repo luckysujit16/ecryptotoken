@@ -542,6 +542,7 @@ contract EcyptoFinance {
         );
     }
 
+    //Calculate Fees on withdrawal to be minted and credited to Fees Wallet for Stakers & Contract Owners Share
     function getFees(uint256 amount) public view returns (uint256) {
         uint256 feeUsd = (amount * withdrawalFees) / 100;
 
@@ -556,6 +557,7 @@ contract EcyptoFinance {
         return feeTokens;
     }
 
+    // Calculate Live Rate of eCrypto as per formula described in whitepaper.
     function calculateLiveRate() public view returns (uint256) {
     // Fetch balances in a single statement to minimize storage access
     uint256 ecryptoTokenBal = ecryptoToken.balanceOf(tokenAddress);
@@ -641,14 +643,14 @@ contract EcyptoFinance {
         Redeems({amount: amount, rate: rate, timestamp: block.timestamp})
     );
     }
-
+    // Check Finance Contract USDT Bal for the redemption
     function checkContractUSDBal(uint256 amount) public view returns (uint256 usdAmount, uint256 contractUSDBal) {
         uint256 liveRate = calculateLiveRate();
         usdAmount = amount * liveRate / 1e18;
         return (usdAmount, usdtToken.balanceOf(address(this)));
     }
        
-
+    // This function can withdraw all Redeemed eCrypto Tokens to Contract Owner only after entire supply of 2.1 Million is Minted.
     function withdrawEcrypto(uint256 amount) external onlyOwner {
         // Check if the total supply is at least 21 million tokens (assuming 18 decimals)
         require(
